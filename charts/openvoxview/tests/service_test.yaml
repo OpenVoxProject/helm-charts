@@ -1,0 +1,42 @@
+suite: service
+templates:
+  - templates/service.yaml
+tests:
+  - it: should render a Service
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+
+  - it: should use configured port
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 5000
+      - equal:
+          path: spec.ports[0].targetPort
+          value: http
+
+  - it: should support LoadBalancer type
+    set:
+      service:
+        type: LoadBalancer
+        port: 8080
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+      - equal:
+          path: spec.ports[0].port
+          value: 8080
+
+  - it: should set service annotations
+    set:
+      service:
+        annotations:
+          external-dns.alpha.kubernetes.io/hostname: openvoxview.example.com
+    asserts:
+      - isNotNull:
+          path: metadata.annotations
