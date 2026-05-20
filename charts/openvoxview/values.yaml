@@ -1,0 +1,70 @@
+image:
+  repository: ghcr.io/voxpupuli/openvoxview
+  tag: v1.4.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+port: 5000
+
+## PuppetDB / OpenVox DB connection settings
+puppetdb:
+  url: "https://puppetdb:8081"
+  ## Reference to an existing TLS secret containing cert.pem and key.pem
+  ## for client certificate authentication against PuppetDB
+  tlsSecretName: ""
+  ## Reference to an existing secret containing the CA certificate (ca.pem)
+  caSecretName: ""
+
+## Additional environment variables
+extraEnv: {}
+#  OPENVOXVIEW_DEFAULT_ENVIRONMENT: production
+
+## Additional environment variables from a pre-existing secret
+extraEnvSecret: ""
+
+resources: {}
+#  requests:
+#    memory: 256Mi
+#    cpu: 200m
+#  limits:
+#    memory: 512Mi
+#    cpu: 500m
+
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+podSecurityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+service:
+  type: ClusterIP
+  port: 5000
+  annotations: {}
+  labels: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  #  - host: openvoxview.example.com
+  #    paths:
+  #      - path: /
+  #        pathType: Prefix
+  tls: []
+  #  - secretName: openvoxview-tls
+  #    hosts:
+  #      - openvoxview.example.com

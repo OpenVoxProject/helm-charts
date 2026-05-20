@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openvoxview.fullname" . }}
+  labels:
+    {{- include "openvoxview.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openvoxview.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "openvoxview.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: openvoxview
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          env:
+            - name: OPENVOXVIEW_PORT
+              value: {{ .Values.port | quote }}
+            - name: PUPPETDB_URL
+              value: {{ .Values.puppetdb.url | quote }}
+            {{- if .Values.puppetdb.tlsSecretName }}
+            - name: PUPPETDB_CERT
+              value: /etc/openvoxview/tls/cert.pem
+            - name: PUPPETDB_KEY
+              value: /etc/openvoxview/tls/key.pem
+            {{- end }}
+            {{- if .Values.puppetdb.caSecretName }}
+            - name: PUPPETDB_CA
+              value: /etc/openvoxview/ca/ca.pem
+            {{- end }}
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.extraEnvSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.extraEnvSecret }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- if or .Values.puppetdb.tlsSecretName .Values.puppetdb.caSecretName }}
+          volumeMounts:
+            {{- if .Values.puppetdb.tlsSecretName }}
+            - name: tls
+              mountPath: /etc/openvoxview/tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.puppetdb.caSecretName }}
+            - name: ca
+              mountPath: /etc/openvoxview/ca
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.puppetdb.tlsSecretName .Values.puppetdb.caSecretName }}
+      volumes:
+        {{- if .Values.puppetdb.tlsSecretName }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.puppetdb.tlsSecretName }}
+        {{- end }}
+        {{- if .Values.puppetdb.caSecretName }}
+        - name: ca
+          secret:
+            secretName: {{ .Values.puppetdb.caSecretName }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

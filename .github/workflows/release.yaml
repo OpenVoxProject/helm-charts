@@ -1,0 +1,59 @@
+name: Release Chart
+
+on:
+  workflow_dispatch:
+    inputs:
+      chart:
+        description: "Chart to release (directory name under charts/)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Validate chart exists
+        run: |
+          if [ ! -f "charts/${{ inputs.chart }}/Chart.yaml" ]; then
+            echo "Chart 'charts/${{ inputs.chart }}' not found"
+            exit 1
+          fi
+
+      - name: Read chart metadata
+        id: meta
+        run: |
+          chart_name=$(yq '.name' "charts/${{ inputs.chart }}/Chart.yaml")
+          chart_version=$(yq '.version' "charts/${{ inputs.chart }}/Chart.yaml")
+          echo "name=${chart_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${chart_version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${chart_name}-${chart_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag does not exist
+        run: |
+          if git rev-parse "refs/tags/${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.meta.outputs.tag }} already exists"
+            exit 1
+          fi
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package and push chart
+        run: |
+          helm package "charts/${{ inputs.chart }}"
+          helm push "${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}.tgz" oci://ghcr.io/openvoxproject/charts
+
+      - name: Create git tag
+        run: |
+          git tag "${{ steps.meta.outputs.tag }}"
+          git push origin "${{ steps.meta.outputs.tag }}"

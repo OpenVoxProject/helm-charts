@@ -1,0 +1,69 @@
+suite: ingress
+templates:
+  - templates/ingress.yaml
+tests:
+  - it: should not render when disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render when enabled
+    set:
+      ingress:
+        enabled: true
+        hosts:
+          - host: openvoxview.example.com
+            paths:
+              - path: /
+                pathType: Prefix
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.rules[0].host
+          value: openvoxview.example.com
+
+  - it: should set ingress class name
+    set:
+      ingress:
+        enabled: true
+        className: nginx
+        hosts:
+          - host: openvoxview.example.com
+            paths:
+              - path: /
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+
+  - it: should set TLS configuration
+    set:
+      ingress:
+        enabled: true
+        hosts:
+          - host: openvoxview.example.com
+            paths:
+              - path: /
+        tls:
+          - secretName: openvoxview-tls
+            hosts:
+              - openvoxview.example.com
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: openvoxview-tls
+
+  - it: should set annotations
+    set:
+      ingress:
+        enabled: true
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt
+        hosts:
+          - host: openvoxview.example.com
+            paths:
+              - path: /
+    asserts:
+      - isNotNull:
+          path: metadata.annotations

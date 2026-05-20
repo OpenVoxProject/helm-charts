@@ -1,0 +1,130 @@
+suite: deployment
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should render a Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: should use the correct image
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/voxpupuli/openvoxview:v1.4.0"
+
+  - it: should set PuppetDB URL
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PUPPETDB_URL
+            value: "https://puppetdb:8081"
+
+  - it: should set security context
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  - it: should not mount volumes without TLS secrets
+    asserts:
+      - isNull:
+          path: spec.template.spec.containers[0].volumeMounts
+      - isNull:
+          path: spec.template.spec.volumes
+
+  - it: should mount TLS secret when configured
+    set:
+      puppetdb:
+        url: "https://puppetdb:8081"
+        tlsSecretName: my-tls
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls
+            mountPath: /etc/openvoxview/tls
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls
+            secret:
+              secretName: my-tls
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PUPPETDB_CERT
+            value: /etc/openvoxview/tls/cert.pem
+
+  - it: should mount CA secret when configured
+    set:
+      puppetdb:
+        url: "https://puppetdb:8081"
+        caSecretName: my-ca
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: ca
+            mountPath: /etc/openvoxview/ca
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: ca
+            secret:
+              secretName: my-ca
+
+  - it: should set extra env vars
+    set:
+      extraEnv:
+        OPENVOXVIEW_DEFAULT_ENVIRONMENT: production
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXVIEW_DEFAULT_ENVIRONMENT
+            value: "production"
+
+  - it: should set envFrom when extraEnvSecret is configured
+    set:
+      extraEnvSecret: my-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            secretRef:
+              name: my-secret
+
+  - it: should respect custom replica count
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: should set pod annotations
+    set:
+      podAnnotations:
+        prometheus.io/scrape: "true"
+    asserts:
+      - isNotNull:
+          path: spec.template.metadata.annotations
+
+  - it: should set node selector
+    set:
+      nodeSelector:
+        disktype: ssd
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: ssd
