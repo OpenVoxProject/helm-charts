@@ -2,6 +2,8 @@
 
 Helm Charts for deploying [OpenVox](https://github.com/OpenVoxProject) components on Kubernetes.
 
+This repository provides modular, independently installable charts for each component of the OpenVox stack. Instead of a single monolithic chart, each component can be installed, upgraded, and scaled on its own. See [docs/chart-standards.md](docs/chart-standards.md) for the conventions all charts follow.
+
 ## Charts
 
 | Chart | Description | Status |
@@ -31,6 +33,22 @@ helm install openvoxview oci://ghcr.io/openvoxproject/charts/openvoxview \
 
 ```bash
 helm pull oci://ghcr.io/openvoxproject/charts/openvoxview --version 0.1.0
+```
+
+## Contributing
+
+All charts follow the conventions in [docs/chart-standards.md](docs/chart-standards.md).
+
+```bash
+# Lint
+helm lint charts/<chart-name>
+
+# Run unit tests
+helm plugin install https://github.com/helm-unittest/helm-unittest.git
+helm unittest charts/<chart-name>
+
+# Regenerate docs
+helm-docs --chart-search-root charts
 ```
 
 ## License
