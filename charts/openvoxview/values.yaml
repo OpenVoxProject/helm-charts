@@ -1,30 +1,38 @@
+# -- Container image repository
 image:
+  # -- Image repository
   repository: ghcr.io/voxpupuli/openvoxview
+  # -- Image tag
   tag: v1.4.0
+  # -- Image pull policy
   pullPolicy: IfNotPresent
 
+# -- Image pull secrets for private registries
 imagePullSecrets: []
 
+# -- Number of replicas
 replicaCount: 1
 
+# -- Container port for OpenVox View
 port: 5000
 
-## PuppetDB / OpenVox DB connection settings
+# -- PuppetDB / OpenVox DB connection settings
 puppetdb:
+  # -- PuppetDB URL
   url: "https://puppetdb:8081"
-  ## Reference to an existing TLS secret containing cert.pem and key.pem
-  ## for client certificate authentication against PuppetDB
+  # -- Existing TLS secret name containing cert.pem and key.pem for client certificate authentication
   tlsSecretName: ""
-  ## Reference to an existing secret containing the CA certificate (ca.pem)
+  # -- Existing secret name containing the CA certificate (ca.pem)
   caSecretName: ""
 
-## Additional environment variables
+# -- Additional environment variables as key-value pairs
 extraEnv: {}
 #  OPENVOXVIEW_DEFAULT_ENVIRONMENT: production
 
-## Additional environment variables from a pre-existing secret
+# -- Name of an existing secret to use as additional environment variables
 extraEnvSecret: ""
 
+# -- Container resource requests and limits
 resources: {}
 #  requests:
 #    memory: 256Mi
@@ -33,6 +41,7 @@ resources: {}
 #    memory: 512Mi
 #    cpu: 500m
 
+# -- Container security context
 securityContext:
   runAsNonRoot: true
   allowPrivilegeEscalation: false
@@ -40,30 +49,47 @@ securityContext:
     drop:
       - ALL
 
+# -- Pod security context
 podSecurityContext: {}
 
+# -- Node selector for pod assignment
 nodeSelector: {}
+# -- Tolerations for pod assignment
 tolerations: []
+# -- Affinity rules for pod assignment
 affinity: {}
 
+# -- Additional pod annotations
 podAnnotations: {}
+# -- Additional pod labels
 podLabels: {}
 
+# -- Service configuration
 service:
+  # -- Service type
   type: ClusterIP
+  # -- Service port
   port: 5000
+  # -- Service annotations
   annotations: {}
+  # -- Service labels
   labels: {}
 
+# -- Ingress configuration
 ingress:
+  # -- Enable ingress
   enabled: false
+  # -- Ingress class name
   className: ""
+  # -- Ingress annotations
   annotations: {}
+  # -- Ingress hosts
   hosts: []
   #  - host: openvoxview.example.com
   #    paths:
   #      - path: /
   #        pathType: Prefix
+  # -- Ingress TLS configuration
   tls: []
   #  - secretName: openvoxview-tls
   #    hosts:
