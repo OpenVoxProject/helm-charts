@@ -128,3 +128,116 @@ tests:
       - equal:
           path: spec.template.spec.nodeSelector.disktype
           value: ssd
+
+  - it: should set priority class name
+    set:
+      priorityClassName: system-cluster-critical
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: system-cluster-critical
+
+  - it: should set topology spread constraints
+    set:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: openvoxview
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: should set update strategy
+    set:
+      updateStrategy:
+        type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: should set termination grace period
+    set:
+      terminationGracePeriodSeconds: 60
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 60
+
+  - it: should use default service account when not created
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: default
+
+  - it: should use created service account
+    set:
+      serviceAccount:
+        create: true
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openvoxview
+
+  - it: should use custom service account name
+    set:
+      serviceAccount:
+        create: true
+        name: my-sa
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: my-sa
+
+  - it: should render configurable probes
+    set:
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: http
+        initialDelaySeconds: 30
+        periodSeconds: 60
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.initialDelaySeconds
+          value: 30
+
+  - it: should render startup probe
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 12
+
+  - it: should render extra containers
+    set:
+      extraContainers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:latest
+          ports:
+            - containerPort: 4180
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: oauth2-proxy
+
+  - it: should render extra volumes
+    set:
+      extraVolumes:
+        - name: shared
+          emptyDir: {}
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared
+            emptyDir: {}
