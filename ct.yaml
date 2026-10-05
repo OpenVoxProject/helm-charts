@@ -1,4 +1,6 @@
 chart-dirs:
   - charts
+chart-repos:
+  - helmforge=https://repo.helmforge.dev
 helm-extra-args: --timeout 600s
 validate-maintainers: false

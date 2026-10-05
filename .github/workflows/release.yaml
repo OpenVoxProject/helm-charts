@@ -50,6 +50,7 @@ jobs:
 
       - name: Package and push chart
         run: |
+          helm dependency build "charts/${{ inputs.chart }}"
           helm package "charts/${{ inputs.chart }}"
           helm push "${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}.tgz" oci://ghcr.io/openvoxproject/charts
 

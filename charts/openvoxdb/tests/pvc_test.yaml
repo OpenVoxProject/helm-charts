@@ -1,0 +1,33 @@
+suite: data claim
+templates:
+  - templates/pvc.yaml
+tests:
+  - it: creates the default data claim
+    asserts:
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: spec.accessModes
+          value: [ReadWriteOnce]
+      - equal:
+          path: spec.resources.requests.storage
+          value: 10Gi
+  - it: omits the claim when persistence is disabled
+    set:
+      persistence.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips creation for an existing claim
+    set:
+      persistence.existingClaim: existing
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: disables dynamic provisioning explicitly
+    set:
+      persistence.storageClass: '-'
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: ''

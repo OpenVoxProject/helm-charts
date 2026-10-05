@@ -9,7 +9,7 @@ This repository provides modular, independently installable charts for each comp
 | Chart | Description | Status |
 |-------|-------------|--------|
 | [openvox-server](charts/openvox-server/) | OpenVox Server (Masters + Compilers + CA) | Planned |
-| [openvox-db](charts/openvox-db/) | OpenVox DB (PuppetDB) | Planned |
+| [openvoxdb](charts/openvoxdb/) | OpenVox DB (PuppetDB) | Planned |
 | [openvox-r10k](charts/openvox-r10k/) | R10K standalone deployment for code sync | Planned |
 | [openvox-postgresql](charts/openvox-postgresql/) | PostgreSQL via CloudNativePG | Planned |
 | [openvoxview](charts/openvoxview/) | OpenVox View - Web UI for OpenVox DB | Available |
@@ -41,6 +41,7 @@ All charts follow the conventions in [docs/chart-standards.md](docs/chart-standa
 
 ```bash
 # Lint
+helm dependency build charts/<chart-name>
 helm lint charts/<chart-name>
 
 # Run unit tests

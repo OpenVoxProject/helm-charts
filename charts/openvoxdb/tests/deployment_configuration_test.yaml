@@ -1,0 +1,122 @@
+suite: deployment configuration
+templates:
+  - templates/deployment.yaml
+  - templates/configmap.yaml
+  - templates/read-database-configmap.yaml
+tests:
+  - it: preserves extra containers volumes and mounts
+    template: templates/deployment.yaml
+    set:
+      extraContainers:
+        - name: custom-sidecar
+          image: busybox:1.37
+      extraVolumes:
+        - name: certificates
+          secret:
+            secretName: application-tls
+      extraVolumeMounts:
+        - name: certificates
+          mountPath: /certificates
+          readOnly: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: custom-sidecar
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: certificates
+            secret:
+              secretName: application-tls
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: certificates
+            mountPath: /certificates
+            readOnly: true
+  - it: enables server enrollment by default
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: USE_OPENVOXSERVER
+            value: "true"
+  - it: supports standalone operation without server enrollment
+    template: templates/deployment.yaml
+    set:
+      puppetServer.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: USE_OPENVOXSERVER
+            value: "false"
+  - it: passes the configured server address and port to the image
+    template: templates/deployment.yaml
+    set:
+      puppetServer.hostname: server.example.com
+      puppetServer.port: 8141
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXSERVER_HOSTNAME
+            value: server.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXSERVER_PORT
+            value: "8141"
+  - it: lets explicit environment values override enrollment settings without duplication
+    template: templates/deployment.yaml
+    set:
+      extraEnv:
+        USE_OPENVOXSERVER: "false"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: USE_OPENVOXSERVER
+            value: "false"
+          count: 1
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: USE_OPENVOXSERVER
+            value: "true"
+  - it: omits the exporter by default
+    template: templates/deployment.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+  - it: configures an enabled exporter and its metrics port
+    template: templates/deployment.yaml
+    set:
+      metrics.enabled: true
+      metrics.port: 9636
+      metrics.url: http://localhost:8080/pdb/query
+      metrics.extraEnvSecret: exporter-env
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: exporter
+      - equal:
+          path: spec.template.spec.containers[1].ports[0]
+          value:
+            name: metrics
+            containerPort: 9636
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: PUPPETDB_URL
+            value: http://localhost:8080/pdb/query
+      - contains:
+          path: spec.template.spec.containers[1].envFrom
+          content:
+            secretRef:
+              name: exporter-env
+      - equal:
+          path: spec.template.spec.containers[1].volumeMounts[0].readOnly
+          value: true

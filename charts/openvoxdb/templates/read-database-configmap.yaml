@@ -1,0 +1,40 @@
+{{- if include "openvoxdb.readDatabaseEnabled" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openvoxdb.fullname" . }}-read-database
+  labels:
+    {{- include "openvoxdb.labels" . | nindent 4 }}
+data:
+  provision.sql: |
+    BEGIN;
+    SELECT EXISTS (
+      SELECT 1 FROM pg_roles r
+      WHERE r.rolname = :'read_user' AND (
+        r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls
+        OR EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid)
+        OR EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                   WHERE c.relowner = r.oid AND n.nspname = 'public')
+      )
+    ) AS unsafe_role \gset
+    \if :unsafe_role
+    \echo 'Refusing to reuse a read-database role with elevated privileges, memberships, or table ownership'
+    \quit 1
+    \endif
+    SELECT format('CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT', :'read_user', :'read_password')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'read_user') \gexec
+    SELECT format('ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT', :'read_user', :'read_password') \gexec
+    GRANT CONNECT ON DATABASE :"database" TO :"read_user";
+    REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+    GRANT USAGE ON SCHEMA public TO :"read_user";
+    REVOKE CREATE ON SCHEMA public FROM :"read_user";
+    REVOKE ALL ON ALL TABLES IN SCHEMA public FROM :"read_user";
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"read_user";
+    GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO :"read_user";
+    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO :"read_user";
+    ALTER DEFAULT PRIVILEGES FOR ROLE :"write_user" IN SCHEMA public GRANT SELECT ON TABLES TO :"read_user";
+    ALTER DEFAULT PRIVILEGES FOR ROLE :"write_user" IN SCHEMA public GRANT USAGE ON SEQUENCES TO :"read_user";
+    ALTER DEFAULT PRIVILEGES FOR ROLE :"write_user" IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO :"read_user";
+    GRANT :"read_user" TO :"write_user";
+    COMMIT;
+{{- end }}

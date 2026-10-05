@@ -1,0 +1,16 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "openvoxdb.fullname" . }}
+  labels:
+    {{- include "openvoxdb.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "openvoxdb.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    {{- toYaml .Values.networkPolicy.policyTypes | nindent 4 }}
+  ingress: {{ toYaml .Values.networkPolicy.additionalIngressRules | nindent 4 }}
+  egress: {{ toYaml .Values.networkPolicy.additionalEgressRules | nindent 4 }}
+{{- end }}

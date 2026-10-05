@@ -1,0 +1,125 @@
+suite: separate read-only database account
+templates:
+  - templates/deployment.yaml
+  - templates/configmap.yaml
+  - templates/read-database-configmap.yaml
+  - templates/read-database-secret.yaml
+tests:
+  - it: keeps administrator credentials in provisioning and read credentials in the application
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-postgresql-auth
+                key: postgres-password
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_READ_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-openvoxdb-read-database
+                key: password
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_READ_USER
+            value: puppetdb_read
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/puppetlabs/puppetdb/conf.d/read-database.conf
+            subPath: read-database.conf
+            readOnly: true
+  - it: uses the same read password Secret and key in provisioning and the application
+    template: templates/deployment.yaml
+    set:
+      readDatabase.existingSecret: read-auth
+      readDatabase.passwordKey: read-password
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: READ_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: read-auth
+                key: read-password
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_READ_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: read-auth
+                key: read-password
+  - it: creates a separate password without putting credentials in a ConfigMap
+    template: templates/read-database-secret.yaml
+    set:
+      readDatabase.password: read-test-password
+    asserts:
+      - equal:
+          path: data.password
+          value: cmVhZC10ZXN0LXBhc3N3b3Jk
+  - it: does not create a Secret when one is supplied
+    template: templates/read-database-secret.yaml
+    set:
+      readDatabase.existingSecret: read-auth
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: grants read privileges to existing and future migration tables
+    template: templates/read-database-configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["provision.sql"]
+          pattern: 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"read_user"'
+      - matchRegex:
+          path: data["provision.sql"]
+          pattern: 'ALTER DEFAULT PRIVILEGES FOR ROLE :"write_user" IN SCHEMA public GRANT SELECT ON TABLES TO :"read_user"'
+      - matchRegex:
+          path: data["provision.sql"]
+          pattern: 'GRANT :"read_user" TO :"write_user"'
+      - matchRegex:
+          path: data["provision.sql"]
+          pattern: 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM :"read_user"'
+  - it: configures the read pool through environment substitution
+    template: templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["read-database.conf"]
+          pattern: 'password: \$\{OPENVOXDB_POSTGRES_READ_PASSWORD\}'
+  - it: omits provisioning and configuration when disabled
+    template: templates/deployment.yaml
+    set:
+      readDatabase.enabled: false
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 1
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_READ_USER
+            value: puppetdb_read
+  - it: omits managed read credentials for external PostgreSQL
+    template: templates/read-database-secret.yaml
+    set:
+      postgresql.enabled: false
+      postgresql.external.hostname: external-db
+      postgresql.shared.existingSecret: external-auth
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: rejects reuse of the writer account
+    template: templates/read-database-secret.yaml
+    set:
+      readDatabase.username: puppetdb
+    asserts:
+      - failedTemplate:
+          errorMessage: readDatabase.username must be a separate nonempty account from postgres and postgresql.auth.username

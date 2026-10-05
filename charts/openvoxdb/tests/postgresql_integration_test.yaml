@@ -1,0 +1,120 @@
+suite: HelmForge PostgreSQL connection
+templates:
+  - templates/deployment.yaml
+  - templates/configmap.yaml
+  - templates/read-database-configmap.yaml
+tests:
+  - it: rejects obsolete values that could silently enable a new database
+    template: templates/deployment.yaml
+    set:
+      postgresql.internal.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "postgresql.internal was removed in chart 0.2.0; migrate to HelmForge postgresql.enabled/auth/standalone values as documented in README.md"
+  - it: requires an external database hostname
+    template: templates/deployment.yaml
+    set:
+      postgresql.enabled: false
+      postgresql.shared.existingSecret: database-auth
+    asserts:
+      - failedTemplate:
+          errorMessage: postgresql.external.hostname is required when postgresql.enabled is false
+  - it: requires an external credential Secret
+    template: templates/deployment.yaml
+    set:
+      postgresql.enabled: false
+      postgresql.external.hostname: external-db
+    asserts:
+      - failedTemplate:
+          errorMessage: postgresql.shared.existingSecret is required when postgresql.enabled is false
+  - it: connects to the subchart service and application credentials
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_HOSTNAME
+            value: RELEASE-NAME-postgresql
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_USER
+            value: puppetdb
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-postgresql-auth
+                key: user-password
+  - it: follows subchart name overrides, replication endpoints, and credentials
+    template: templates/deployment.yaml
+    set:
+      fullnameOverride: custom-openvoxdb
+      postgresql.fullnameOverride: database
+      postgresql.architecture: replication
+      postgresql.auth.database: inventory
+      postgresql.auth.username: inventory-user
+      postgresql.auth.existingSecret: database-credentials
+      postgresql.auth.existingSecretUserPasswordKey: application-password
+      postgresql.service.port: 5433
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_HOSTNAME
+            value: database-primary
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_DATABASE
+            value: inventory
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_USER
+            value: inventory-user
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_PORT
+            value: "5433"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: database-credentials
+                key: application-password
+  - it: follows the subchart nameOverride independently of the parent name
+    template: templates/deployment.yaml
+    set:
+      nameOverride: app
+      postgresql.nameOverride: database
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_HOSTNAME
+            value: RELEASE-NAME-database
+  - it: allows explicit environment overrides without duplicate credentials
+    template: templates/deployment.yaml
+    set:
+      extraEnv:
+        OPENVOXDB_POSTGRES_USER: overridden-user
+        OPENVOXDB_POSTGRES_PASSWORD: overridden-password
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_USER
+            value: overridden-user
+          count: 1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_PASSWORD
+            value: overridden-password
+          count: 1

@@ -1,0 +1,7 @@
+{{- if and .Values.puppetServer.enabled (not .Values.puppetServer.hostname) }}
+WARNING: puppetServer.enabled=true, but puppetServer.hostname is empty.
+
+OpenVoxDB will wait for an OpenVox Server and cannot finish starting with this configuration.
+Set puppetServer.hostname to your server address, or set puppetServer.enabled=false
+to skip server enrollment and run standalone over HTTP.
+{{- end }}

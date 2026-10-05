@@ -1,0 +1,182 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/openvoxproject/openvoxdb
+  tag: 8.15.0-main
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 1
+extraEnv: {}
+extraEnvSecret: ""
+resources: {}
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# The OpenVoxDB image uses group 0 for writable files, including under arbitrary UIDs.
+podSecurityContext:
+  fsGroup: 0
+  fsGroupChangePolicy: OnRootMismatch
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+podAnnotations: {}
+podLabels: {}
+updateStrategy:
+  type: Recreate
+terminationGracePeriodSeconds: 30
+
+# -- Create or reuse a Kubernetes service account
+serviceAccount:
+  create: false
+  # Generated from the release name when create is true and name is empty.
+  name: ""
+  annotations: {}
+
+# -- Part of chart-standards
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # Mutually exclusive with minAvailable.
+  maxUnavailable: ""
+
+livenessProbe: {}
+readinessProbe: {}
+startupProbe: {}
+
+extraContainers: []
+extraVolumes: []
+extraVolumeMounts: []
+extraInitContainers: []
+
+service:
+  type: ClusterIP
+  port: 8081
+  httpPort: 8080
+  annotations: {}
+  labels: {}
+
+# -- HelmForge PostgreSQL subchart. Additional upstream values can be set here.
+postgresql:
+  enabled: true
+  image:
+    repository: docker.io/library/postgres
+    tag: 17.11-bookworm
+  auth:
+    database: puppetdb
+    username: puppetdb
+    # Passwords are generated and retained by the subchart when empty.
+    postgresPassword: ""
+    password: ""
+    # Must contain both administrator and application passwords.
+    existingSecret: ""
+  standalone:
+    resourcesPreset: none
+    persistence:
+      size: 10Gi
+  securityContext:
+    readOnlyRootFilesystem: true
+  extraVolumes:
+    - name: run
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: run
+      mountPath: /var/run/postgresql
+    - name: tmp
+      mountPath: /tmp
+  initdb:
+    scripts:
+      10-openvoxdb-extensions.sh: |
+        #!/bin/bash
+        set -euo pipefail
+        export PGPASSWORD="${POSTGRES_PASSWORD}"
+        psql --username "${POSTGRES_USER}" --dbname "${APP_DATABASE}" --set ON_ERROR_STOP=1 <<'SQL'
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        SQL
+
+  # -- External PostgreSQL credentials and connection settings, used when enabled is false
+  shared:
+    port: 5432
+    database: puppetdb
+    username: puppetdb
+    existingSecret: ""
+    usernameKey: username
+    passwordKey: password
+
+  # -- Existing PostgreSQL or CloudNativePG connection
+  external:
+    # Required when enabled is false.
+    hostname: ""
+
+# -- Separate query account for bundled PostgreSQL. Provisioned before each OpenVoxDB start.
+readDatabase:
+  enabled: true
+  username: puppetdb_read
+  # Generated and retained when empty. Applies only without existingSecret.
+  password: ""
+  existingSecret: ""
+  passwordKey: password
+
+# -- External Puppet Server used by the image for certificate enrollment
+# -- On by default
+puppetServer:
+  enabled: true
+  hostname: ""
+  port: 8140
+
+# Extra OpenVoxDB configuration knobs
+
+# -- JVM arguments (extraEnv.PUPPETDB_JAVA_ARGS takes precedence)
+javaArgs: ""
+# -- Additional certificate DNS names, comma separated
+alternateServerNames: ""
+# -- Custom conf.d files keyed by filename, mounted individually
+customConfig: {}
+
+# -- Persist OpenVoxDB data or reuse an existing claim
+persistence:
+  enabled: true
+  # Suppresses PVC creation when set.
+  existingClaim: ""
+  accessModes: [ReadWriteOnce]
+  # -- Storage class, empty uses cluster default, '-' disables dynamic provisioning
+  storageClass: ""
+  annotations: {}
+  size: 10Gi
+
+# -- Network isolation. Enabled defaults deny traffic except explicitly supplied rules.
+# -- Mentioned in chart-standards
+networkPolicy:
+  enabled: false
+  policyTypes: [Ingress, Egress]
+  additionalIngressRules: []
+  additionalEgressRules: []
+
+# -- Run a Prometheus exporter sidecar and optionally create a ServiceMonitor
+metrics:
+  enabled: false
+  image:
+    repository: camptocamp/prometheus-puppetdb-exporter
+    tag: 1.1.0
+    pullPolicy: IfNotPresent
+  port: 9635
+  interval: 30s
+  resources: {}
+  # -- Exporter target URL. HTTPS credentials can be mounted using extraVolumes.
+  url: http://localhost:8080/pdb/query
+  # -- Prometheus Operator integration, requires the ServiceMonitor CRD
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    honorLabels: true

@@ -1,0 +1,70 @@
+suite: bundled HelmForge PostgreSQL resources
+templates:
+  - charts/postgresql/templates/statefulset-primary.yaml
+  - charts/postgresql/templates/configmap.yaml
+  - charts/postgresql/templates/secret.yaml
+tests:
+  - it: preserves the image, storage capacity, and writable runtime mounts
+    template: charts/postgresql/templates/statefulset-primary.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker.io/library/postgres:17.11-bookworm
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+          value: 10Gi
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: run
+            mountPath: /var/run/postgresql
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+  - it: initializes extensions in the configured application database
+    template: charts/postgresql/templates/configmap.yaml
+    documentIndex: 1
+    set:
+      postgresql.auth.database: inventory
+    asserts:
+      - matchRegex:
+          path: data["10-openvoxdb-extensions.sh"]
+          pattern: '--dbname "\$\{APP_DATABASE\}"'
+      - matchRegex:
+          path: data["10-openvoxdb-extensions.sh"]
+          pattern: CREATE EXTENSION IF NOT EXISTS pg_trgm;
+      - matchRegex:
+          path: data["10-openvoxdb-extensions.sh"]
+          pattern: CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  - it: creates separate administrator and application credentials
+    template: charts/postgresql/templates/secret.yaml
+    set:
+      postgresql.auth.postgresPassword: admin-test-password
+      postgresql.auth.password: app-test-password
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql-auth
+      - equal:
+          path: data.postgres-password
+          value: YWRtaW4tdGVzdC1wYXNzd29yZA==
+      - equal:
+          path: data.user-password
+          value: YXBwLXRlc3QtcGFzc3dvcmQ=
+  - it: uses emptyDir when PostgreSQL persistence is disabled
+    template: charts/postgresql/templates/statefulset-primary.yaml
+    set:
+      postgresql.standalone.persistence.enabled: false
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir: {}

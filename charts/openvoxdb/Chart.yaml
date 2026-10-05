@@ -1,0 +1,14 @@
+apiVersion: v2
+name: openvoxdb
+version: 0.2.0
+appVersion: "8.15.0-main"
+description: Standalone OpenVox DB (PuppetDB)
+type: application
+keywords:
+  - openvox
+  - puppetdb
+dependencies:
+  - name: postgresql
+    version: 2.0.5
+    repository: https://repo.helmforge.dev
+    condition: postgresql.enabled

@@ -1,0 +1,284 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openvoxdb.fullname" . }}
+  labels:
+    {{- include "openvoxdb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- with .Values.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "openvoxdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if include "openvoxdb.readDatabaseEnabled" . }}
+        checksum/read-database: {{ include (print $.Template.BasePath "/read-database-configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "openvoxdb.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openvoxdb.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: openvoxdb
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: https
+              containerPort: 8081
+          env:
+            {{- $env := dict "OPENVOXDB_POSTGRES_HOSTNAME" (include "openvoxdb.postgresqlHostname" .) "OPENVOXDB_POSTGRES_PORT" (include "openvoxdb.postgresqlPort" .) "OPENVOXDB_POSTGRES_DATABASE" (include "openvoxdb.postgresqlDatabase" .) "OPENVOXSERVER_HOSTNAME" .Values.puppetServer.hostname "OPENVOXSERVER_PORT" (.Values.puppetServer.port | toString) "DNS_ALT_NAMES" .Values.alternateServerNames "PUPPETDB_JAVA_ARGS" .Values.javaArgs }}
+            {{- $_ := set $env "USE_OPENVOXSERVER" (.Values.puppetServer.enabled | toString) }}
+            {{- if include "openvoxdb.readDatabaseEnabled" . }}
+            {{- $_ := set $env "OPENVOXDB_POSTGRES_READ_USER" .Values.readDatabase.username }}
+            {{- end }}
+            {{- if .Values.postgresql.enabled }}
+            {{- $_ := set $env "OPENVOXDB_POSTGRES_USER" .Values.postgresql.auth.username }}
+            {{- end }}
+            {{- range $key, $value := mergeOverwrite $env .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- $secretEnv := dict "OPENVOXDB_POSTGRES_PASSWORD" (include "openvoxdb.postgresqlPasswordKey" .) }}
+            {{- if not .Values.postgresql.enabled }}
+            {{- $_ := set $secretEnv "OPENVOXDB_POSTGRES_USER" .Values.postgresql.shared.usernameKey }}
+            {{- end }}
+            {{- range $key, $secretKey := $secretEnv }}
+            {{- if not (hasKey $.Values.extraEnv $key) }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openvoxdb.postgresqlSecretName" $ | quote }}
+                  key: {{ $secretKey | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if and (include "openvoxdb.readDatabaseEnabled" .) (not (hasKey .Values.extraEnv "OPENVOXDB_POSTGRES_READ_PASSWORD")) }}
+            - name: OPENVOXDB_POSTGRES_READ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openvoxdb.readDatabaseSecretName" . | quote }}
+                  key: {{ .Values.readDatabase.passwordKey | quote }}
+            {{- end }}
+          {{- if .Values.extraEnvSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.extraEnvSecret | quote }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/puppetlabs/server/data/puppetdb
+            - name: tmp
+              mountPath: /tmp
+            {{- if include "openvoxdb.readDatabaseEnabled" . }}
+            - name: config
+              mountPath: /etc/puppetlabs/puppetdb/conf.d/read-database.conf
+              subPath: read-database.conf
+              readOnly: true
+            {{- end }}
+            {{- range $filename, $_ := .Values.customConfig }}
+            - name: config
+              mountPath: {{ printf "/etc/puppetlabs/puppetdb/conf.d/%s" $filename | quote }}
+              subPath: {{ $filename | quote }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- if .Values.metrics.enabled }}
+        - name: exporter
+          image: "{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag }}"
+          imagePullPolicy: {{ .Values.metrics.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+          env:
+            {{- $metricsEnv := dict "PUPPETDB_URL" .Values.metrics.url "PUPPETDB_SCRAPE_INTERVAL" .Values.metrics.interval "PUPPETDB_LISTEN_ADDRESS" (printf "0.0.0.0:%v" .Values.metrics.port) }}
+            {{- range $key, $value := mergeOverwrite $metricsEnv (.Values.metrics.extraEnv | default dict) }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- with .Values.metrics.extraEnvSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . | quote }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.metrics.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/puppetlabs/server/data/puppetdb
+              readOnly: true
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      initContainers:
+        {{- if include "openvoxdb.readDatabaseEnabled" . }}
+        - name: prepare-read-database
+          image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Subcharts.postgresql.Values.image.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              export PGCONNECT_TIMEOUT=5
+              for attempt in $(seq 1 60); do
+                if psql -Atc 'SELECT 1' >/dev/null 2>&1; then
+                  exec psql --set ON_ERROR_STOP=1 --set database="$PGDATABASE" \
+                    --set write_user="$WRITE_USER" --set read_user="$READ_USER" \
+                    --set read_password="$READ_PASSWORD" --file /scripts/provision.sql
+                fi
+                sleep 2
+              done
+              echo "PostgreSQL was not ready for read-only account provisioning" >&2
+              exit 1
+          env:
+            - name: PGHOST
+              value: {{ include "openvoxdb.postgresqlHostname" . | quote }}
+            - name: PGPORT
+              value: {{ include "openvoxdb.postgresqlPort" . | quote }}
+            - name: PGDATABASE
+              value: {{ include "openvoxdb.postgresqlDatabase" . | quote }}
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openvoxdb.postgresqlSecretName" . | quote }}
+                  key: {{ .Subcharts.postgresql.Values.auth.existingSecretPostgresPasswordKey | quote }}
+            - name: WRITE_USER
+              value: {{ .Values.postgresql.auth.username | quote }}
+            - name: READ_USER
+              value: {{ .Values.readDatabase.username | quote }}
+            - name: READ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openvoxdb.readDatabaseSecretName" . | quote }}
+                  key: {{ .Values.readDatabase.passwordKey | quote }}
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: read-database-scripts
+              mountPath: /scripts
+              readOnly: true
+        {{- end }}
+        - name: prepare-data
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - mkdir -p /opt/puppetlabs/server/data/puppetdb/logs
+          securityContext:
+            runAsUser: 64604
+            runAsGroup: 0
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /opt/puppetlabs/server/data/puppetdb
+        {{- with .Values.extraInitContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "openvoxdb.fullname" .) .Values.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- if or .Values.customConfig (include "openvoxdb.readDatabaseEnabled" .) }}
+        - name: config
+          configMap:
+            name: {{ include "openvoxdb.fullname" . }}-config
+        {{- end }}
+        {{- if include "openvoxdb.readDatabaseEnabled" . }}
+        - name: read-database-scripts
+          configMap:
+            name: {{ include "openvoxdb.fullname" . }}-read-database
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

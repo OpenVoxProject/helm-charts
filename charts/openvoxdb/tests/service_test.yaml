@@ -1,0 +1,51 @@
+suite: service
+templates:
+  - templates/service.yaml
+tests:
+  - it: exposes HTTP and HTTPS with matching pod selectors
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: openvoxdb
+            app.kubernetes.io/instance: RELEASE-NAME
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 8080
+              targetPort: http
+            - name: https
+              port: 8081
+              targetPort: https
+  - it: supports service type and port overrides
+    set:
+      service.type: LoadBalancer
+      service.httpPort: 9080
+      service.port: 9081
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+      - equal:
+          path: spec.ports[0].port
+          value: 9080
+      - equal:
+          path: spec.ports[1].port
+          value: 9081
+  - it: exposes the metrics port when the exporter is enabled
+    set:
+      metrics.enabled: true
+      metrics.port: 9636
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            name: metrics
+            port: 9636
+            targetPort: metrics

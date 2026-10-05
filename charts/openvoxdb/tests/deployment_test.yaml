@@ -1,0 +1,99 @@
+suite: standalone deployment
+templates:
+  - templates/deployment.yaml
+  - templates/configmap.yaml
+  - templates/read-database-configmap.yaml
+tests:
+  - it: uses the selected image and secure defaults
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          template: templates/deployment.yaml
+          path: spec.strategy.type
+          value: Recreate
+      - equal:
+          template: templates/deployment.yaml
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/openvoxproject/openvoxdb:8.15.0-main
+      - equal:
+          template: templates/deployment.yaml
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+      - equal:
+          template: templates/deployment.yaml
+          path: spec.template.spec.initContainers[1].command
+          value: [sh, -ec, mkdir -p /opt/puppetlabs/server/data/puppetdb/logs]
+      - equal:
+          path: spec.template.spec.initContainers[1].image
+          value: ghcr.io/openvoxproject/openvoxdb:8.15.0-main
+      - equal:
+          path: spec.template.spec.initContainers[1].securityContext.runAsUser
+          value: 64604
+      - equal:
+          path: spec.template.spec.initContainers[1].securityContext.runAsGroup
+          value: 0
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 0
+      - equal:
+          path: spec.template.spec.initContainers[1].volumeMounts[0].name
+          value: data
+  - it: preserves additional init containers after data preparation
+    template: templates/deployment.yaml
+    set:
+      extraInitContainers:
+        - name: custom-init
+          image: busybox:1.37
+          command: [sh, -c, "true"]
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: prepare-data
+      - equal:
+          path: spec.template.spec.initContainers[2].name
+          value: custom-init
+  - it: references existing credentials and data without creating dependency workloads
+    template: templates/deployment.yaml
+    set:
+      postgresql.enabled: false
+      postgresql.external.hostname: external-db
+      postgresql.shared.existingSecret: db-credentials
+      persistence.existingClaim: db-data
+    asserts:
+      - contains:
+          template: templates/deployment.yaml
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: db-credentials
+                key: password
+      - contains:
+          template: templates/deployment.yaml
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENVOXDB_POSTGRES_HOSTNAME
+            value: external-db
+      - equal:
+          template: templates/deployment.yaml
+          path: spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+          value: db-data
+  - it: uses temporary storage when persistence is disabled
+    template: templates/deployment.yaml
+    set:
+      persistence.enabled: false
+    asserts:
+      - equal:
+          template: templates/deployment.yaml
+          path: spec.template.spec.volumes[0].emptyDir
+          value: {}
